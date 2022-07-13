@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -282,6 +283,7 @@ type Client struct {
 	authStore  io.ReadWriter
 	auth       *auth
 	httpClient *http.Client
+	authMutex  *sync.Mutex
 }
 
 func NewClient(username string, password string, authStore io.ReadWriter, httpClient *http.Client) *Client {
@@ -289,7 +291,13 @@ func NewClient(username string, password string, authStore io.ReadWriter, httpCl
 		return http.ErrUseLastResponse
 	}
 
-	return &Client{username: username, password: password, authStore: authStore, httpClient: httpClient}
+	return &Client{
+		username:   username,
+		password:   password,
+		authStore:  authStore,
+		httpClient: httpClient,
+		authMutex:  &sync.Mutex{},
+	}
 }
 
 func (c *Client) GetVehicles(ctx context.Context) (vehicles Vehicles, err error) {
@@ -299,7 +307,12 @@ func (c *Client) GetVehicles(ctx context.Context) (vehicles Vehicles, err error)
 	}
 
 	_, offset := time.Now().Local().Zone()
-	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf(vehiclesRequestUrl, offset, time.Now().Unix()), nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf(vehiclesRequestUrl, offset, time.Now().Unix()),
+		nil,
+	)
 	req.Header = http.Header{
 		"x-user-agent":  {androidUserAgent},
 		"Authorization": {fmt.Sprintf("Bearer %s", c.auth.Token)},
@@ -311,13 +324,13 @@ func (c *Client) GetVehicles(ctx context.Context) (vehicles Vehicles, err error)
 		return nil, fmt.Errorf("error fetching vehicles list: %w", err)
 	}
 
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
+	defer func(body io.ReadCloser) {
+		_ = body.Close()
 	}(resp.Body)
 
 	d := json.NewDecoder(resp.Body)
 	err = d.Decode(&vehicles)
-	if err != nil || resp.StatusCode >= 400 {
+	if err != nil || resp.StatusCode >= http.StatusBadRequest {
 		return nil, fmt.Errorf("error decoding vehicles list: %w, %v", err, resp)
 	}
 
@@ -349,6 +362,9 @@ func (c *Client) loadAuth() {
 }
 
 func (c *Client) refreshAuth(ctx context.Context) error {
+	c.authMutex.Lock()
+	defer c.authMutex.Unlock()
+
 	if c.auth == nil {
 		c.loadAuth()
 		if c.auth == nil {
@@ -391,7 +407,7 @@ func (c *Client) getToken(ctx context.Context) error {
 		"grant_type":            {"authorization_code"},
 	}
 	body := strings.NewReader(form.Encode())
-	req, err := http.NewRequestWithContext(ctx, "POST", authUrl, body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, authUrl, body)
 	if err != nil {
 		return fmt.Errorf("getToken stage1 error: can't create request: %w", err)
 	}
@@ -402,12 +418,12 @@ func (c *Client) getToken(ctx context.Context) error {
 	}
 
 	resp, err := c.httpClient.Do(req)
-	if err != nil || resp.StatusCode >= 400 {
+	if err != nil || resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("getToken stage1 error: can't send request: %w, %v", err, resp)
 	}
 
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
+	defer func(body io.ReadCloser) {
+		_ = body.Close()
 	}(resp.Body)
 
 	var stage1Response struct {
@@ -440,7 +456,7 @@ func (c *Client) getToken(ctx context.Context) error {
 		"code_challenge_method": {"plain"},
 		"authorization":         {authString},
 	}
-	req, err = http.NewRequestWithContext(ctx, "POST", authUrl, strings.NewReader(form.Encode()))
+	req, err = http.NewRequestWithContext(ctx, http.MethodPost, authUrl, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("getToken stage2 error: can't create request: %w", err)
 	}
@@ -451,12 +467,12 @@ func (c *Client) getToken(ctx context.Context) error {
 	}
 
 	resp, err = c.httpClient.Do(req)
-	if err != nil || resp.StatusCode >= 400 {
+	if err != nil || resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("getToken stage2 error: can't send request: %w, %v", err, resp)
 	}
 
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
+	defer func(body io.ReadCloser) {
+		_ = body.Close()
 	}(resp.Body)
 
 	var code string
@@ -487,7 +503,7 @@ func (c *Client) getToken(ctx context.Context) error {
 		"redirect_uri":  {"com.bmw.connected://oauth"},
 		"grant_type":    {"authorization_code"},
 	}
-	req, err = http.NewRequestWithContext(ctx, "POST", authTokenUrl, strings.NewReader(form.Encode()))
+	req, err = http.NewRequestWithContext(ctx, http.MethodPost, authTokenUrl, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("getToken stage3 error: can't create request: %w", err)
 	}
@@ -499,12 +515,12 @@ func (c *Client) getToken(ctx context.Context) error {
 	}
 
 	resp, err = c.httpClient.Do(req)
-	if err != nil || resp.StatusCode >= 400 {
+	if err != nil || resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("getToken stage3 error: can't send request: %w, %v", err, resp)
 	}
 
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
+	defer func(body io.ReadCloser) {
+		_ = body.Close()
 	}(resp.Body)
 
 	d = json.NewDecoder(resp.Body)
@@ -522,7 +538,7 @@ func (c *Client) getRefreshToken(ctx context.Context) error {
 		"refresh_token": {c.auth.RefreshToken},
 		"grant_type":    {"refresh_token"},
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", authUrl, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, authUrl, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("getRefreshToken error: can't create request: %w", err)
 	}
@@ -537,8 +553,8 @@ func (c *Client) getRefreshToken(ctx context.Context) error {
 		return fmt.Errorf("getRefreshToken error: can't send request: %w", err)
 	}
 
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
+	defer func(body io.ReadCloser) {
+		_ = body.Close()
 	}(resp.Body)
 
 	d := json.NewDecoder(resp.Body)

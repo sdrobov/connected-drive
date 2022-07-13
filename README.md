@@ -1,4 +1,9 @@
-# Unofficial Go library for fetching info from BWM ConnectedDrive
+# Unofficial Go library for fetching info from BMW ConnectedDrive
+
+## Installation
+
+`go get github.com/sdrobov/connected-drive`
+
 ## Usage
 ```go
 package main
@@ -24,3 +29,6 @@ func main() {
 	fmt.Printf("%v\n", string(j))
 }
 ```
+
+## Legal
+This library are in no way connected to the company BMW AG. BMW and ConnectedDrive are registered trademarks of BMW AG.
