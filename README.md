@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	connecteddrive "github.com/sdrobov/connected-drive"
@@ -14,7 +15,7 @@ import (
 func main() {
 	var authStorage []byte
 	c := connecteddrive.NewClient("user@example.com", "userPassword", bytes.NewBuffer(authStorage), http.DefaultClient)
-	v, e := c.GetVehicles()
+	v, e := c.GetVehicles(context.Background())
 	if e != nil {
 		panic(e)
 	}
