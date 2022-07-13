@@ -31,4 +31,4 @@ func main() {
 ```
 
 ## Legal
-This library are in no way connected to the company BMW AG. BMW and ConnectedDrive are registered trademarks of BMW AG.
+This library is in no way connected to the company BMW AG. BMW and ConnectedDrive are registered trademarks of BMW AG.
