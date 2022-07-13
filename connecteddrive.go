@@ -334,8 +334,6 @@ func (c *Client) saveAuth() {
 	if err != nil {
 		return
 	}
-
-	return
 }
 
 func (c *Client) loadAuth() {
@@ -348,8 +346,6 @@ func (c *Client) loadAuth() {
 	if err != nil {
 		return
 	}
-
-	return
 }
 
 func (c *Client) refreshAuth(ctx context.Context) error {
